@@ -1,0 +1,224 @@
+---
+title: "HR Data Visualization Q1"
+author: "Stephanie Cheng"
+output: html_document
+date: "2025-01-05"
+---
+
+## Load Library
+```{r library setup, include=FALSE}
+library(lattice)
+library(ggplot2)
+library(dplyr)
+```
+
+## Load Dataset
+```{r data setup, include=FALSE}
+hr_data <- read.csv("HRDataset_v14.csv")
+```
+
+## Q1
+
+The relationship between `ManagerName` and `PerformanceScore`
+
+```{r relationship intro, echo=FALSE}
+#See how many employees under each Manager
+print(table(hr_data$ManagerName))
+
+```
+
+```{r relationship Plot, echo=FALSE}
+hr_data$ManagerFactor <- factor(hr_data$ManagerName)
+y_axis <- unique(hr_data$PerfScoreID)
+
+xyplot(PerfScoreID ~ ManagerID | ManagerFactor, 
+       data = hr_data, 
+       pch = 19, 
+       as.table = TRUE,
+       main = "Employee Performance Scores by Manager",
+       xlab = "",
+       ylab = "Performance Score ID",
+       strip = strip.custom(par.strip.text = list(cex = 0.6)),
+       scales = list(y = list(at = y_axis))
+       )
+```
+
+## Q2
+The overall diversity profile
+
+(1)Gender
+```{r diversity_gender, echo=FALSE}
+gender_count <- table(hr_data$Sex)
+barchart(gender_count,
+         main = "Gender Distribution",
+         xlab = "Count",
+         ylab = "Gender",
+         col = c("violet","royalblue"),
+         auto.key = list(columns = 2))
+```
+
+(2)Ethnicity (Race)
+```{r diversity_race, echo=FALSE}
+race_data <- hr_data %>%
+  group_by(RaceDesc) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(Proportion = Count / sum(Count))
+
+ggplot(race_data, aes(x = reorder(RaceDesc, -Count), y = Count, fill = RaceDesc)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Race Distribution",
+       x = "Ethnicity",
+       y = "Count",
+       fill = "Race") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(race_data)
+```
+
+(3)Marital Status
+```{r diversity_marital status, echo=FALSE}
+marital_data <- hr_data %>%
+  group_by(MaritalDesc) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(Proportion = Count / sum(Count))
+
+ggplot(marital_data, aes(x = "", y = Count, fill = MaritalDesc)) +
+  geom_bar(stat = "identity", width = 1) +  
+  coord_polar("y") + 
+  labs(title = "Employee Distribution by Marital Status",
+       fill = "Marital Status") +
+  theme_minimal()
+
+print(marital_data)
+```
+
+(4)Citizen
+```{r diversity_citizen, echo=FALSE}
+citizen_state_data <- hr_data %>%
+  group_by(State, CitizenDesc) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(Proportion = Count / sum(Count),
+         Statelab = as.numeric(factor(State)),
+         Citizenlab = as.numeric(factor(CitizenDesc)))
+
+ggplot(citizen_state_data, aes(x = factor(State), y = CitizenDesc, fill = Count)) +
+  geom_tile() +
+  scale_fill_gradient(low = "springgreen", high = "turquoise4") +
+  labs(title = "Employees by State and Citizenship",
+       x = "State",
+       y = "Citizenship",
+       fill = "Employee Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5))
+
+
+print(citizen_state_data)
+```
+
+## Q3
+Show the relationship between diverse/non-diverse hires and each recruitment source.
+
+Since there are lots of recruitment source, i will randomly assigns them into 3 different
+groups. So that it is readable when plotting the relationship.
+```{r recruitment sources, echo=FALSE}
+unique_sources <- unique(hr_data$RecruitmentSource)
+
+shuffled_sources <- sample(unique_sources)
+
+# Split into 3 equal groups
+num_groups <- 3
+split_sources <- split(unique_sources, rep(1:num_groups, each = length(unique_sources) / num_groups))
+
+source_group_map <- setNames(rep(c("Group 1", "Group 2", "Group 3"), each = length(unique_sources) / num_groups),
+                             unlist(split_sources, use.names = FALSE))
+
+hr_data$SourceGroup <- source_group_map[hr_data$RecruitmentSource]
+hr_data$RecruitmentSource <- factor(hr_data$RecruitmentSource)
+
+```
+
+Plot the relationship 
+```{r recruitment sources, echo=FALSE}
+COPLOT <- function(group_name) {
+  group_data <- hr_data[hr_data$SourceGroup == group_name, ]
+  group_data$RecruitmentSource <- factor(group_data$RecruitmentSource)
+  
+  coplot(FromDiversityJobFairID ~ as.numeric(RecruitmentSource) | RecruitmentSource, 
+       data = group_data, 
+       panel = function(x, y, ...) {
+         panel.smooth(x, y, ...)
+         axis(2, at = c(0, 1), labels = c("0", "1"))
+       },
+       xlab = "Recruitment Source",
+       ylab = "Diversity Hire",
+       main = "Diversity Hiring by Recruitment Source")
+}
+COPLOT("Group 1")
+COPLOT("Group 2")
+COPLOT("Group 3")
+```
+
+## Q4
+
+Check who is going to terminate (Outline Source: ChatGPT)
+
+```{r prediction terminate, echo=FALSE}
+hr_data$Termd <- as.factor(hr_data$Termd)
+
+selected_data <- hr_data %>%
+  select(Employee_Name, EmpID, Termd, PerfScoreID, EngagementSurvey, DaysLateLast30, Absences)
+
+scatter_matrix <- ggpairs(
+  selected_data,
+  columns = c("PerfScoreID", "EngagementSurvey", "DaysLateLast30", "Absences"),
+  aes(color = Termd, alpha = 0.7),
+  lower = list(continuous = "points"),
+  upper = list(continuous = "cor"),
+  title = "Termination Status"
+)
+
+print(scatter_matrix)
+```
+
+## Q5
+
+Check the pay equality by factors 
+```{r pay, echo=FALSE}
+pay_data <- hr_data %>%
+  select(Department, Position, GenderID, Salary)
+
+print(pay_data)
+#by Department
+ggplot(pay_data, aes(x = Department, y = Salary, fill = Department)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 2, alpha = 0.9) +
+  labs(
+    title = "Salary Distribution by Department",
+    x = "Department",
+    y = "Salary"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#by Position
+ggplot(pay_data, aes(y = Salary, fill = Position)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 2, alpha = 0.9) +
+  labs(
+    title = "Salary Distribution by Position",
+    x = "Position",
+    y = "Salary"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+#by Gender
+ggplot(pay_data, aes(x = as.factor(GenderID), y = Salary, fill = as.factor(GenderID))) +
+  geom_boxplot(outlier.color = "red", outlier.size = 2, alpha = 0.9) +
+  labs(
+    title = "Salary Distribution by Gender",
+    x = "Gender",
+    y = "Salary"
+  ) +
+  theme_minimal()
+
+```
